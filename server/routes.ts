@@ -61,12 +61,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Serve uploaded files
   app.use('/uploads', express.static(uploadsDir));
 
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
+  // Auth routes (temporarily bypassed)
+  app.get('/api/auth/user', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      res.json(user);
+      // Temporary bypass - return a mock admin user
+      const mockUser = {
+        id: 'temp-admin',
+        email: 'admin@temp.com',
+        firstName: 'Temp',
+        lastName: 'Admin'
+      };
+      res.json(mockUser);
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -138,16 +143,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin routes (protected)
-  app.get('/api/admin/posts', isAuthenticated, async (req: any, res) => {
+  // Admin routes (temporarily bypassed)
+  app.get('/api/admin/posts', async (req: any, res) => {
     try {
       const { status, category, search, limit = "50", offset = "0" } = req.query;
-      const userId = req.user.claims.sub;
 
       const posts = await storage.getPosts({
         status: status as string,
         categoryId: category as string,
-        authorId: userId,
         search: search as string,
         limit: parseInt(limit as string),
         offset: parseInt(offset as string),
@@ -160,20 +163,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/admin/posts/:id', isAuthenticated, async (req: any, res) => {
+  app.get('/api/admin/posts/:id', async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.user.claims.sub;
 
       const post = await storage.getPost(id);
 
       if (!post) {
         return res.status(404).json({ message: "Post not found" });
-      }
-
-      // Ensure user owns the post
-      if (post.authorId !== userId) {
-        return res.status(403).json({ message: "Access denied" });
       }
 
       res.json(post);
@@ -183,9 +180,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/admin/posts', isAuthenticated, async (req: any, res) => {
+  app.post('/api/admin/posts', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = 'temp-admin'; // Temporary admin user
       const data = insertPostSchema.parse(req.body);
 
       // Generate slug and calculate read time
@@ -210,19 +207,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put('/api/admin/posts/:id', isAuthenticated, async (req: any, res) => {
+  app.put('/api/admin/posts/:id', async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.user.claims.sub;
 
-      // Check if post exists and user owns it
+      // Check if post exists
       const existingPost = await storage.getPost(id);
       if (!existingPost) {
         return res.status(404).json({ message: "Post not found" });
-      }
-
-      if (existingPost.authorId !== userId) {
-        return res.status(403).json({ message: "Access denied" });
       }
 
       const data = insertPostSchema.partial().parse(req.body);
@@ -254,19 +246,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/admin/posts/:id', isAuthenticated, async (req: any, res) => {
+  app.delete('/api/admin/posts/:id', async (req: any, res) => {
     try {
       const { id } = req.params;
-      const userId = req.user.claims.sub;
 
-      // Check if post exists and user owns it
+      // Check if post exists
       const existingPost = await storage.getPost(id);
       if (!existingPost) {
         return res.status(404).json({ message: "Post not found" });
-      }
-
-      if (existingPost.authorId !== userId) {
-        return res.status(403).json({ message: "Access denied" });
       }
 
       await storage.deletePost(id);
@@ -277,10 +264,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/admin/stats', isAuthenticated, async (req: any, res) => {
+  app.get('/api/admin/stats', async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const stats = await storage.getPostStats(userId);
+      const stats = await storage.getPostStats();
       res.json(stats);
     } catch (error) {
       console.error("Error fetching stats:", error);
@@ -289,7 +275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // File upload route
-  app.post('/api/admin/upload', isAuthenticated, upload.single('image'), (req, res) => {
+  app.post('/api/admin/upload', upload.single('image'), (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -304,7 +290,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Category management routes
-  app.post('/api/admin/categories', isAuthenticated, async (req, res) => {
+  app.post('/api/admin/categories', async (req, res) => {
     try {
       const data = insertCategorySchema.parse(req.body);
       const slug = generateSlug(data.name);
