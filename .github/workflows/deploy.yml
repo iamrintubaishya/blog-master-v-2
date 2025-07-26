@@ -1,0 +1,63 @@
+name: Deploy Blog Platform
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: blog_platform
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build application
+      run: npm run build
+      env:
+        NODE_ENV: production
+
+    - name: Run database migrations
+      run: npm run db:push
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blog_platform
+
+    - name: Run tests (if any)
+      run: npm test --if-present
+      env:
+        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/blog_platform
+        NODE_ENV: test
+
+    - name: Deploy to GitHub Pages (if on main branch)
+      if: github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./dist/public
+        cname: your-domain.com  # Optional: replace with your custom domain
