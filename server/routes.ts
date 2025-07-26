@@ -8,6 +8,7 @@ import { randomUUID } from "crypto";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import session from "express-session";
 
 // Configure multer for file uploads
 const uploadsDir = path.join(process.cwd(), "uploads");
@@ -55,23 +56,77 @@ function calculateReadTime(content: string): number {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Auth middleware
-  await setupAuth(app);
+  // Session middleware for Vercel compatibility
+  app.use(session({
+    secret: process.env.SESSION_SECRET || 'your-secret-key',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { 
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    }
+  }));
+
+  // Auth middleware (fallback to Replit auth if available)
+  try {
+    await setupAuth(app);
+  } catch (error) {
+    console.log("Replit auth not available, using session-based auth");
+  }
 
   // Serve uploaded files
   app.use('/uploads', express.static(uploadsDir));
 
-  // Auth routes (temporarily bypassed)
+  // Auth routes - simple password-based authentication for Vercel
+  app.post('/api/auth/login', async (req, res) => {
+    try {
+      const { password } = req.body;
+      const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+      
+      if (password === adminPassword) {
+        // Set session
+        (req as any).session.userId = 'admin';
+        res.json({ 
+          success: true, 
+          user: {
+            id: 'admin',
+            email: 'admin@blog.com',
+            firstName: 'Admin',
+            lastName: 'User'
+          }
+        });
+      } else {
+        res.status(401).json({ message: 'Invalid password' });
+      }
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
+
+  app.post('/api/auth/logout', async (req: any, res) => {
+    try {
+      req.session.destroy();
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Logout error:", error);
+      res.status(500).json({ message: "Logout failed" });
+    }
+  });
+
   app.get('/api/auth/user', async (req: any, res) => {
     try {
-      // Temporary bypass - return a mock admin user
-      const mockUser = {
-        id: 'temp-admin',
-        email: 'admin@temp.com',
-        firstName: 'Temp',
-        lastName: 'Admin'
-      };
-      res.json(mockUser);
+      if (req.session?.userId) {
+        const user = {
+          id: 'admin',
+          email: 'admin@blog.com',
+          firstName: 'Admin',
+          lastName: 'User'
+        };
+        res.json(user);
+      } else {
+        res.status(401).json({ message: "Not authenticated" });
+      }
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
@@ -143,8 +198,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Admin routes (temporarily bypassed)
+  // Admin routes with session authentication
   app.get('/api/admin/posts', async (req: any, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
     try {
       const { status, category, search, limit = "50", offset = "0" } = req.query;
 
@@ -164,6 +222,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get('/api/admin/posts/:id', async (req: any, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
     try {
       const { id } = req.params;
 
@@ -181,8 +242,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.post('/api/admin/posts', async (req: any, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
     try {
-      const userId = 'temp-admin'; // Temporary admin user
+      const userId = req.session.userId;
       const data = insertPostSchema.parse(req.body);
 
       // Generate slug and calculate read time
@@ -208,6 +272,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.put('/api/admin/posts/:id', async (req: any, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
     try {
       const { id } = req.params;
 
@@ -247,6 +314,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.delete('/api/admin/posts/:id', async (req: any, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
     try {
       const { id } = req.params;
 
@@ -265,6 +335,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   app.get('/api/admin/stats', async (req: any, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
     try {
       const stats = await storage.getPostStats();
       res.json(stats);
@@ -275,7 +348,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // File upload route
-  app.post('/api/admin/upload', upload.single('image'), (req, res) => {
+  app.post('/api/admin/upload', upload.single('image'), (req: any, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -290,7 +366,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Category management routes
-  app.post('/api/admin/categories', async (req, res) => {
+  app.post('/api/admin/categories', async (req: any, res) => {
+    if (!req.session?.userId) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
     try {
       const data = insertCategorySchema.parse(req.body);
       const slug = generateSlug(data.name);

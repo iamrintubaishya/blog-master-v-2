@@ -4,11 +4,12 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
-import NotFound from "@/pages/not-found";
-import Landing from "@/pages/landing";
-import Home from "@/pages/home";
-import Post from "@/pages/post";
-import AdminDashboard from "@/pages/admin-dashboard";
+import Home from "./pages/home";
+import Landing from "./pages/landing";
+import Post from "./pages/post";
+import AdminDashboard from "./pages/admin-dashboard";
+import Login from "./pages/login";
+import NotFound from "./pages/not-found";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
